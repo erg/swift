@@ -20,6 +20,7 @@ import pipes
 import shutil
 import subprocess
 import sys
+from multiprocessing import Pool, Lock, cpu_count
 from contextlib import contextmanager
 
 from . import diagnostics
@@ -170,3 +171,71 @@ def copytree(src, dest, dry_run=None, echo=True):
     if dry_run:
         return
     shutil.copytree(src, dest)
+
+
+def run(*args, **kwargs):
+    msg = None
+    repo_path = os.getcwd()
+    try:
+        echo_output = kwargs.pop('echo', False)
+        msg = kwargs.pop('msg', False)
+        dry_run = kwargs.pop('dry_run', False)
+        env = kwargs.pop('env', None)
+        allow_non_zero_exit = kwargs.pop('allow_non_zero_exit', False)
+        if dry_run:
+            _echo_command(dry_run, *args, env=env)
+            return(None, 0, args)
+
+        out = subprocess.check_output(*args, stderr=subprocess.STDOUT, **kwargs)
+        lock.acquire()
+
+        if out and echo_output:
+            print(repo_path)
+            _echo_command(dry_run, *args, env=env)
+            print(out)
+        lock.release()
+        return (out, 0, args)
+    except subprocess.CalledProcessError as e:
+        if allow_non_zero_exit:
+            print("non-fatal error running ``%s`` on ``%s``" % (" ".join(*args), repo_path))
+            return (out, 0, args)
+        print("error running ``%s`` on ``%s``" % (" ".join(*args), repo_path))
+        # Workaround for exception bug in 2.7.12
+        # http://bugs.python.org/issue9400
+        eout = Exception(str(e))
+        eout.repo_path = repo_path
+        if msg is not None and msg is not False:
+            print(msg)
+        eout.msg = msg
+        raise eout
+
+
+def run_parallel(fn, pool_args, n_processes=0):
+    def init(l):
+        global lock
+        lock = l
+
+    if n_processes == 0:
+        n_processes = cpu_count()
+
+    l = Lock()
+    pool = Pool(processes=n_processes, initializer=init, initargs=(l,))
+    results = pool.map_async(func=fn, iterable=pool_args).get(9999999)
+    pool.close()
+    pool.join()
+    return results
+
+
+def check_parallel_results(results, op):
+    fail_count = 0
+    if results is None:
+        return 0
+    for r in results:
+        if r is not None:
+            if fail_count == 0:
+                print("======%s FAILURES======" % op)
+            print("%s failed: %s" % (r.repo_path, r))
+            fail_count += 1
+            if r.msg:
+                print(r.msg)
+    return fail_count
