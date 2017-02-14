@@ -48,7 +48,15 @@ KNOWN_SETTINGS=(
     host-cc                     ""               "the path to CC, the 'clang' compiler for the host platform. **This argument is required**"
     host-cxx                    ""               "the path to CXX, the 'clang++' compiler for the host platform. **This argument is required**"
     host-lipo                   ""               "the path to lipo for creating universal binaries on Darwin"
-    host-libtool                ""               "the path to libtool"
+    host-libtool                ""               "the path to libtool, auto-detected but can be overridden"
+    host-linker                 ""               "the path to ld, auto-detected but can be overridden"
+    host-ar                     ""               "the path to ar, auto-detected but can be overridden"
+    host-nm                     ""               "the path to nm, auto-detected but can be overridden"
+    host-objdump                ""               "the path to objdump, auto-detected but can be overridden"
+    host-ranlib                 ""               "the path to ranlib, auto-detected but can be overridden"
+    host-strip                  ""               "the path to strip, auto-detected but can be overridden"
+    host-dsymutil               ""               "the path to dsymutil, auto-detected but can be overridden"
+    swiftenv                    ""               "a path containing the above host-tools, which are found first if specified"
     darwin-xcrun-toolchain      "default"        "the name of the toolchain to use on Darwin"
     ninja-bin                   ""               "the path to Ninja tool"
     cmark-build-type            "Debug"          "the CMake build variant for CommonMark (Debug, RelWithDebInfo, Release, MinSizeRel).  Defaults to Debug."
@@ -977,6 +985,67 @@ if [ ! -e "${WORKSPACE}" ] ; then
     exit 1
 fi
 
+if [ -z "${CMAKE}" ] ; then
+    echo "Environment variable CMAKE must be specified."
+    exit 1
+fi
+
+function xcrun_find_tool() {
+  if [[ ! -z ${SWIFTENV} ]] && [[ -f "${SWIFTENV}/$1" ]]; then
+    echo "${SWIFTENV}/$1"
+  else
+    xcrun --sdk macosx --toolchain "${DARWIN_XCRUN_TOOLCHAIN}" --find "$1"
+  fi
+
+  if [[ "$?" -ne 0 ]] ; then
+    >&2 echo "error: xcrun failed for $1"
+    exit 1
+  fi
+}
+
+UNAME=$(uname -s)
+
+# if HOST_$TOOLNAME is not set, look for it with xcrun or which
+function find_tool() {
+  if [[ ${SWIFTENV} ]]; then
+    SWIFT_PATH="${SWIFTENV}:$PATH"
+  fi
+
+  if [[ -z ${!2} ]]; then
+    if [[ "$1" == "Darwin" ]]; then
+      eval "$2=$(xcrun_find_tool $3)"
+    elif [[ "$1" == "Linux" ]]; then
+      eval "$2=$(env PATH="${SWIFT_PATH}" which $3)"
+    fi
+  fi
+
+  if [[ -z ${!2} ]]; then
+    echo "Could not find ${3}"
+    exit 12
+  else
+    echo "Found ${3}: ${!2}"
+  fi
+}
+
+function find_host_tools() {
+  find_tool "${UNAME}" HOST_CC clang
+  find_tool "${UNAME}" HOST_CXX clang++
+
+  find_tool "${UNAME}" HOST_DSYMUTIL dsymutil
+  find_tool "${UNAME}" HOST_AR ar
+  find_tool "${UNAME}" HOST_RANLIB ranlib
+  find_tool "${UNAME}" HOST_STRIP strip
+  find_tool "${UNAME}" HOST_LIBTOOL libtool
+  if [[ "${UNAME}" == "Darwin" ]]; then
+    find_tool "${UNAME}" HOST_LIPO lipo
+  fi
+  find_tool "${UNAME}" HOST_LINKER ld
+  find_tool "${UNAME}" HOST_NM nm
+  find_tool "${UNAME}" HOST_OBJDUMP objdump
+}
+
+find_host_tools
+
 # FIXME: HOST_CC and CMAKE are set, and their presence is validated by,
 #        utils/build-script. These checks are redundant, but must remain until
 #        build-script-impl is merged completely with utils/build-script.
@@ -985,14 +1054,6 @@ if [ -z "${HOST_CC}" ] ; then
     echo "Can't find clang.  Please install clang-3.5 or a later version."
     exit 1
 fi
-if [ -z "${CMAKE}" ] ; then
-    echo "Environment variable CMAKE must be specified."
-    exit 1
-fi
-
-function xcrun_find_tool() {
-  xcrun --sdk macosx --toolchain "${DARWIN_XCRUN_TOOLCHAIN}" --find "$@"
-}
 
 function not() {
     if [[ ! "$1" ]] ; then
@@ -1533,16 +1594,17 @@ eval EXTRA_CMAKE_OPTIONS=(${EXTRA_CMAKE_OPTIONS})
 eval BUILD_ARGS=(${BUILD_ARGS})
 
 if [[ -n "${DISTCC}" ]]; then
-    if [[ "$(uname -s)" == "Darwin" ]] ; then
+    if [[ "${UNAME}" == "Darwin" ]] ; then
         # These are normally deduced by CMake, but when the compiler is set to
         # distcc which is installed elsewhere, we need to set them explicitly.
         COMMON_CMAKE_OPTIONS=(
-            "${COMMON_CMAKE_OPTIONS[@]}" "-DCMAKE_AR=$(xcrun_find_tool ar)"
-            "-DCMAKE_LINKER=$(xcrun_find_tool ld)"
-            "-DCMAKE_NM=$(xcrun_find_tool nm)"
-            "-DCMAKE_OBJDUMP=$(xcrun_find_tool objdump)"
-            "-DCMAKE_RANLIB=$(xcrun_find_tool ranlib)"
-            "-DCMAKE_STRIP=$(xcrun_find_tool strip)"
+            "${COMMON_CMAKE_OPTIONS[@]}"
+            "-DCMAKE_AR=${HOST_AR}"
+            "-DCMAKE_LINKER=${HOST_LD}"
+            "-DCMAKE_NM=${HOST_NM}"
+            "-DCMAKE_OBJDUMP=${HOST_OBJDUMP}"
+            "-DCMAKE_RANLIB=${HOST_RANLIB}"
+            "-DCMAKE_STRIP=${HOST_STRIP}"
         )
     fi
 fi
@@ -1889,7 +1951,7 @@ for host in "${ALL_HOSTS[@]}"; do
         )
     fi
 
-    if [[ "${ENABLE_ASAN}" || "$(uname -s)" == "Linux" ]] ; then
+    if [[ "${ENABLE_ASAN}" || "${UNAME}" == "Linux" ]] ; then
         swift_cmake_options=(
             "${swift_cmake_options[@]}"
             -DSWIFT_SOURCEKIT_USE_INPROC_LIBRARY:BOOL=TRUE
@@ -2391,7 +2453,7 @@ for host in "${ALL_HOSTS[@]}"; do
                     LIBDISPATCH_BUILD_ARGS="--libdispatch-src-dir=${LIBDISPATCH_SOURCE_DIR} --libdispatch-build-dir=${LIBDISPATCH_BUILD_DIR}"
                 fi
                 
-                if [[ "$(uname -s)" == "Darwin" ]] ; then
+                if [[ "${UNAME}" == "Darwin" ]] ; then
                     # xcodebuild requires swift-stdlib-tool to build a Swift
                     # framework. This is normally present when building XCTest
                     # via a packaged .xctoolchain, but here we are using the
@@ -2599,8 +2661,14 @@ for host in "${ALL_HOSTS[@]}"; do
             if [[ -n "${DISTCC}" ]]; then
                 EXTRA_DISTCC_OPTIONS=("DISTCC_HOSTS=localhost,lzo,cpp")
             fi
+            if [[ "${SWIFTENV}" ]]; then
+                touch "${SWIFTENV}/cmake-configure"
+            fi
             with_pushd "${build_dir}" \
                 call env "${EXTRA_DISTCC_OPTIONS[@]}" "${CMAKE}" "${cmake_options[@]}" "${EXTRA_CMAKE_OPTIONS[@]}" "${source_dir}"
+            if [[ "${SWIFTENV}" ]]; then
+                rm "${SWIFTENV}/cmake-configure"
+            fi
         fi
 
         # When we are building LLVM create symlinks to the c++ headers. We need
@@ -2611,7 +2679,7 @@ for host in "${ALL_HOSTS[@]}"; do
         # swift. So we need to do configure's work here.
         if [[ "${product}" == "llvm" ]]; then
             # Find the location of the c++ header dir.
-            if [[ "$(uname -s)" == "Darwin" ]] ; then
+            if [[ "${UNAME}" == "Darwin" ]] ; then
               HOST_CXX_DIR=$(dirname ${HOST_CXX})
               HOST_CXX_HEADERS_DIR="$HOST_CXX_DIR/../../usr/include/c++"
             else # Linux
@@ -2713,7 +2781,7 @@ for host in "${ALL_HOSTS[@]}"; do
                 lldb_build_dir=$(build_directory ${host} lldb)
 
                 # Run the gtests.
-                if [[ "$(uname -s)" == "Darwin" ]] ; then
+                if [[ "${UNAME}" == "Darwin" ]] ; then
                     set_lldb_xcodebuild_options
                     # Run the LLDB unittests (gtests).
                     with_pushd ${LLDB_SOURCE_DIR} \
@@ -2731,7 +2799,7 @@ for host in "${ALL_HOSTS[@]}"; do
 
                 swift_build_dir=$(build_directory ${host} swift)
                 # Setup lldb executable path
-                if [[ "$(uname -s)" == "Darwin" ]] ; then
+                if [[ "${UNAME}" == "Darwin" ]] ; then
                     lldb_executable="${lldb_build_dir}"/${LLDB_BUILD_MODE}/lldb
                 else
                     lldb_executable="${lldb_build_dir}"/bin/lldb
@@ -2752,7 +2820,7 @@ for host in "${ALL_HOSTS[@]}"; do
                                        -O--xpass=success \
                                        -O--xfail=success"
                     # Setup the xUnit results formatter.
-                    if [[ "$(uname -s)" != "Darwin" ]] ; then
+                    if [[ "${UNAME}" != "Darwin" ]] ; then
                         # On non-Darwin, we ignore skipped tests entirely
                         # so that they don't pollute our xUnit results with
                         # non-actionable content.
@@ -3164,7 +3232,7 @@ for host in "${ALL_HOSTS[@]}"; do
                 # Note that installing directly to /usr/lib/swift usually
                 # requires root permissions.
                 set -x
-                case "$(uname -s)" in
+                case "${UNAME}" in
                     Linux)
                         PLAYGROUNDLOGGER_INSTALL_DIR="$(get_host_install_destdir ${host})/$(get_host_install_prefix ${host})/lib/swift/linux"
                         mkdir -p "${PLAYGROUNDLOGGER_INSTALL_DIR}"
@@ -3191,7 +3259,7 @@ for host in "${ALL_HOSTS[@]}"; do
                 if [[ -z "${INSTALL_PLAYGROUNDSUPPORT}" ]] ; then
                     continue
                 fi
-                case "$(uname -s)" in
+                case "${UNAME}" in
                     Linux)
                         ;;
                     FreeBSD)
@@ -3247,13 +3315,13 @@ for host in "${ALL_HOSTS[@]}"; do
                grep -v swift-stdlib-tool | \
                grep -v crashlog.py | \
                grep -v symbolication.py | \
-               xargs -n 1 -P ${BUILD_JOBS} $(xcrun_find_tool dsymutil))
+               xargs -n 1 -P ${BUILD_JOBS} ${HOST_DSYMUTIL})
 
             # Strip executables, shared libraries and static libraries in
             # `host_install_destdir`.
             find "${host_install_destdir}${TOOLCHAIN_PREFIX}/" \
               '(' -perm -0111 -or -name "*.a" ')' -type f -print | \
-              xargs -n 1 -P ${BUILD_JOBS} $(xcrun_find_tool strip) -S
+              xargs -n 1 -P ${BUILD_JOBS} ${HOST_STRIP} -S
 
             { set +x; } 2>/dev/null
         fi
@@ -3339,7 +3407,7 @@ function build_and_test_installable_package() {
               call tar -c -z -f "${package_for_host}" "${TOOLCHAIN_PREFIX/#\/}"
         else
             # tar on OS X doesn't support --owner/--group.
-            if [[ "$(uname -s)" == "Darwin" ]] ; then
+            if [[ "${UNAME}" == "Darwin" ]] ; then
                 with_pushd "${host_install_destdir}" \
                     tar -c -z -f "${package_for_host}" "${host_install_prefix/#\/}"
             else
@@ -3400,13 +3468,7 @@ if [[ ${#LIPO_SRC_DIRS[@]} -gt 0 ]]; then
     
     echo "--- Merging and running lipo ---"
     
-    # Allow passing lipo with --host-lipo
-    if [[ -z "${HOST_LIPO}" ]] ; then
-        LIPO_PATH=$(xcrun_find_tool lipo)
-    else
-        LIPO_PATH="${HOST_LIPO}"
-    fi
-    call "${SWIFT_SOURCE_DIR}"/utils/recursive-lipo --lipo=${LIPO_PATH} --copy-subdirs="$(get_host_install_prefix ${host})lib/swift $(get_host_install_prefix ${host})lib/swift_static" --destination="$(get_host_install_destdir ${mergedHost})" ${LIPO_SRC_DIRS[@]}
+    call "${SWIFT_SOURCE_DIR}"/utils/recursive-lipo --lipo=${HOST_LIPO} --copy-subdirs="$(get_host_install_prefix ${host})lib/swift $(get_host_install_prefix ${host})lib/swift_static" --destination="$(get_host_install_destdir ${mergedHost})" ${LIPO_SRC_DIRS[@]}
 
     # Build and test the lipo-ed package.
     build_and_test_installable_package ${mergedHost}
