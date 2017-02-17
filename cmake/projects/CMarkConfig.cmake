@@ -1,0 +1,4 @@
+set(CMARK_C_FLAGS "-fno-stack-protector" CACHE STRING "")
+
+#set(CMARK_MAIN_INCLUDE_DIR "${CMARK_MAIN_SRC_DIR}/src")
+#set(CMARK_BUILD_INCLUDE_DIR "${PATH_TO_CMARK_BUILD}/src")
