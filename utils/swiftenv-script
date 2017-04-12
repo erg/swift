@@ -26,7 +26,7 @@ function find_real_command {
         find_util="xcrun_find"
     fi
     case "$command_name" in
-        clang|clang++|ld|swift|swiftc|lipo|ar|codesign|dsymutil|libtool|ranlib|strip|llvm-tblgen|python) "${find_util}" "${command_name}";;
+        clang|clang++|ld|swift|swiftc|lipo|ar|codesign|dsymutil|libtool|libtoolize|ranlib|strip|llvm-tblgen|python) "${find_util}" "${command_name}";;
         *) echo "$1";;
     esac
 }
@@ -74,6 +74,8 @@ function find_command_targets { # sets: outfiles
         ar) outfiles=("${outfiles[@]}" $(second "${args[@]}"));;
         codesign|dsymutil|install_name_tool|strip) outfiles=("${outfiles[@]}" $(last "${args[@]}"));;
         line-directive|llvm-build|python);;
+        libtoolize)
+            outfiles=("${outfiles[@]}" "libtool");;
         *) >&2 echo "find_command_targets: unknown command: $1";; # not fatal error
     esac
 }

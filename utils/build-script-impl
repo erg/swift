@@ -1163,6 +1163,7 @@ function find_host_tools() {
   find_tool CMAKE_DSYMUTIL dsymutil
   find_tool CMAKE_STRIP strip
   find_tool CMAKE_LIBTOOL libtool
+  find_tool CMAKE_LIBTOOLIZE libtoolize
   find_tool CMAKE_PYTHON python
   CMAKE_GYB="${SWIFT_SOURCE_DIR}/utils/gyb"
   echo "Found gyb: ${CMAKE_GYB}"
@@ -1188,10 +1189,29 @@ function set_cmake_tools {
   if [ "${CMAKE_RANLIB}" ]; then cmake_options=( "${cmake_options[@]}" -DCMAKE_RANLIB:PATH="${CMAKE_RANLIB}"); fi
   if [ "${CMAKE_LIPO}" ]; then cmake_options=( "${cmake_options[@]}" -DCMAKE_LIPO:PATH="${CMAKE_LIPO}"); fi
   if [ "${CMAKE_LIBTOOL}" ]; then cmake_options=( "${cmake_options[@]}" -DCMAKE_LIBTOOL:PATH="${CMAKE_LIBTOOL}"); fi
+  if [ "${CMAKE_LIBTOOLIZE}" ]; then cmake_options=( "${cmake_options[@]}" -DCMAKE_LIBTOOLIZE:PATH="${CMAKE_LIBTOOLIZE}"); fi
   if [ "${CMAKE_INSTALL_NAME_TOOL}" ]; then cmake_options=( "${cmake_options[@]}" -DCMAKE_INSTALL_NAME_TOOL:PATH="${CMAKE_INSTALL_NAME_TOOL}"); fi
   if [ "${CMAKE_CODESIGN}" ]; then cmake_options=( "${cmake_options[@]}" -DCMAKE_CODESIGN:PATH="${CMAKE_CODESIGN}"); fi
   if [ "${CMAKE_PYTHON}" ]; then cmake_options=( "${cmake_options[@]}" -DPYTHON_EXECUTABLE:PATH="${CMAKE_PYTHON}"); fi
   if [ "${CMAKE_GYB}" ]; then cmake_options=( "${cmake_options[@]}" -DCMAKE_GYB:PATH="${CMAKE_GYB}"); fi
+}
+
+function set_autoconf_tools {
+  if [ "${CMAKE_C_COMPILER}" ]; then CC="${CMAKE_C_COMPILER}"; fi
+  if [ "${CMAKE_C_COMPILER}" ]; then AC_PROG_CC="${CMAKE_C_COMPILER}"; fi
+  if [ "${CMAKE_CXX_COMPILER}" ]; then CXX="${CMAKE_CXX_COMPILER}"; fi
+  if [ "${CMAKE_CXX_COMPILER}" ]; then AC_PROG_CXX="${CMAKE_CXX_COMPILER}"; fi
+  #if [ "${CMAKE_CXX_COMPILER}" ]; then CXX="${CMAKE_C_COMPILER}"; fi
+  #if [ "${CMAKE_CXX_COMPILER}" ]; then cmake_options=( "${cmake_options[@]}" -DCMAKE_CXX_COMPILER:PATH="${CMAKE_CXX_COMPILER}"); fi
+  #if [ "${CMAKE_AR}" ]; then cmake_options=( "${cmake_options[@]}" -DCMAKE_AR:PATH="${CMAKE_AR}"); fi
+  #if [ "${CMAKE_LD}" ]; then cmake_options=( "${cmake_options[@]}" -DCMAKE_LD:PATH="${CMAKE_LD}"); fi
+  #if [ "${CMAKE_RANLIB}" ]; then cmake_options=( "${cmake_options[@]}" -DCMAKE_RANLIB:PATH="${CMAKE_RANLIB}"); fi
+  #if [ "${CMAKE_LIPO}" ]; then cmake_options=( "${cmake_options[@]}" -DCMAKE_LIPO:PATH="${CMAKE_LIPO}"); fi
+  #if [ "${CMAKE_LIBTOOL}" ]; then cmake_options=( "${cmake_options[@]}" -DCMAKE_LIBTOOL:PATH="${CMAKE_LIBTOOL}"); fi
+  #if [ "${CMAKE_INSTALL_NAME_TOOL}" ]; then cmake_options=( "${cmake_options[@]}" -DCMAKE_INSTALL_NAME_TOOL:PATH="${CMAKE_INSTALL_NAME_TOOL}"); fi
+  #if [ "${CMAKE_CODESIGN}" ]; then cmake_options=( "${cmake_options[@]}" -DCMAKE_CODESIGN:PATH="${CMAKE_CODESIGN}"); fi
+  #if [ "${CMAKE_PYTHON}" ]; then cmake_options=( "${cmake_options[@]}" -DPYTHON_EXECUTABLE:PATH="${CMAKE_PYTHON}"); fi
+  #if [ "${CMAKE_GYB}" ]; then cmake_options=( "${cmake_options[@]}" -DCMAKE_GYB:PATH="${CMAKE_GYB}"); fi
 }
 
 # FIXME: CMAKE_C_COMPILER and CMAKE are set, and their presence is validated by,
@@ -2091,6 +2111,7 @@ for host in "${ALL_HOSTS[@]}"; do
         product_cmake_options=(${!product_cmake_options_name}) # convert to array
         cmake_options+=("${product_cmake_options[@]}")
 
+		echo "BUILDING PRODUCT:::::::::::::: ${product}"
         case ${product} in
             cmark)
                 set_cmake_tools
@@ -2599,10 +2620,13 @@ for host in "${ALL_HOSTS[@]}"; do
                 continue
                 ;;
             libdispatch)
+				echo "CMAKE_C_COMPILER=${CMAKE_C_COMPILER}"
                 LIBDISPATCH_BUILD_DIR=$(build_directory ${host} ${product})
                 SWIFT_BUILD_PATH="$(build_directory ${host} swift)"
                 SWIFTC_BIN="$(build_directory_bin ${LOCAL_HOST} swift)/swiftc"
                 LLVM_BIN="$(build_directory_bin ${LOCAL_HOST} llvm)"
+
+                set_autoconf_tools
 
                 if [[ "${RECONFIGURE}" || ! -f "${LIBDISPATCH_BUILD_DIR}"/config.status ]]; then
                     echo "Reconfiguring libdispatch"
@@ -2616,9 +2640,14 @@ for host in "${ALL_HOSTS[@]}"; do
                     fi
                     call mkdir -p "${LIBDISPATCH_BUILD_DIR}"
                     with_pushd "${LIBDISPATCH_SOURCE_DIR}" \
-                        call autoreconf -fvi
+                        call LIBTOOLIZE="${CMAKE_LIBTOOLIZE}" autoreconf -fvi
                     with_pushd "${LIBDISPATCH_BUILD_DIR}" \
-                        call env CC="${LLVM_BIN}/clang" CXX="${LLVM_BIN}/clang++" SWIFTC="${SWIFTC_BIN}" \
+                        #call env CC="${LLVM_BIN}/clang" CXX="${LLVM_BIN}/clang++" SWIFTC="${SWIFTC_BIN}" \
+                        echo "call env CC=\"${CMAKE_C_COMPILER}\" CXX=\"${CMAKE_CXX_COMPILER}\" LIBTOOL=\"${CMAKE_LIBTOOL}\" SWIFTC=\"${SWIFTC_BIN}\" \
+                            \"${LIBDISPATCH_SOURCE_DIR}\"/configure --with-swift-toolchain=\"${SWIFT_BUILD_PATH}\" \
+                            --with-build-variant=$dispatch_build_variant_arg \
+                            --prefix=\"$(get_host_install_destdir ${host})$(get_host_install_prefix ${host})\""
+                        call env CC="${CMAKE_C_COMPILER}" CXX="${CMAKE_CXX_COMPILER}" LIBTOOLIZE="${CMAKE_LIBTOOLIZE}" LIBTOOL="${CMAKE_LIBTOOL}" SWIFTC="${SWIFTC_BIN}" \
                             "${LIBDISPATCH_SOURCE_DIR}"/configure --with-swift-toolchain="${SWIFT_BUILD_PATH}" \
                             --with-build-variant=$dispatch_build_variant_arg \
                             --prefix="$(get_host_install_destdir ${host})$(get_host_install_prefix ${host})"

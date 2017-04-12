@@ -19,7 +19,7 @@ EOF
     chmod a+x "$shim_path"
 }
 function make_links {
-    local cmds=(ar clang clang++ codesign dsymutil gyb install_name_tool libtool ld lipo nm objdump python ranlib strip)
+    local cmds=(ar clang clang++ codesign dsymutil gyb install_name_tool libtoolize libtool ld lipo nm objdump python ranlib strip)
     for cmd in "${cmds[@]}"
         do ln -sf "shim" "$cmd"
     done
