@@ -3,6 +3,8 @@ cmake_minimum_required(VERSION 3.4.3)
 # Add path for custom CMake modules.
 list(APPEND CMAKE_MODULE_PATH
     "${CMAKE_CURRENT_SOURCE_DIR}/cmake/modules")
+list(APPEND CMAKE_MODULE_PATH
+    "${CMAKE_CURRENT_SOURCE_DIR}/../llvm/cmake/modules")
 
 # Make a job pool for things that can't yet be distributed
 cmake_host_system_information(
@@ -10,6 +12,50 @@ cmake_host_system_information(
 set_property(GLOBAL PROPERTY JOB_POOLS local_jobs=${localhost_logical_cores})
 # Put linking in that category
 set_property(GLOBAL PROPERTY JOB_POOL_LINK local_jobs)
+
+set(BUILD_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../build")
+set(LLVM_BUILD_DIRECTORY "${BUILD_DIRECTORY}/llvm/")
+
+set(SWIFT_NATIVE_LLVM_TOOLS_PATH "${LLVM_BUILD_DIRECTORY}/bin")
+
+include(Platforms)
+include(SwiftCompilerLibrary)
+include(AddSwiftTableGen)
+
+add_subdirectory(include)
+include_directories(${CMAKE_SOURCE_DIR}/include)
+include_directories(${CMAKE_SOURCE_DIR}/../llvm/include)
+include_directories("${LLVM_BUILD_DIRECTORY}/include")
+include_directories(${CMAKE_SOURCE_DIR}/../clang/include)
+include_directories(${LLVM_BUILD_DIRECTORY}/tools/clang/include)
+include_directories(${CMAKE_CURRENT_BINARY_DIR}/include)
+message(STATUS "CMAKE_CURRENT_BINARY_DIR: ${CMAKE_CURRENT_BINARY_DIR}")
+
+get_property(dirs DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY INCLUDE_DIRECTORIES)
+foreach(dir ${dirs})
+  message(STATUS "dir='${dir}'")
+endforeach()
+
+set(CMAKE_C_COMPILER clang)
+set(CMAKE_C_FLAGS )
+set(CMAKE_CXX_COMPILER clang++)
+set(CMAKE_CXX_FLAGS -std=c++11)
+
+add_subdirectory(lib)
+
+
+# set(CMAKE_INCLUDE_CURRENT_DIR ON)
+
+# For generated headers
+#[[include_directories(BEFORE
+  ${SWIFT_MAIN_INCLUDE_DIR}
+  ${SWIFT_INCLUDE_DIR}
+  )]]
+
+#include_directories(${CMAKE_SOURCE_DIR}/include)
+
+
+#[===[
 
 # First include general CMake utilities.
 include(SwiftUtils)
@@ -885,3 +931,4 @@ if(XCODE)
   add_custom_target(Miscellaneous
       SOURCES ${SWIFT_TOPLEVEL_HEADERS})
 endif()
+]===]

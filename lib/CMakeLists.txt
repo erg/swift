@@ -1,5 +1,7 @@
 add_subdirectory(AST)
-add_subdirectory(ASTSectionImporter)
+
+
+#[[add_subdirectory(ASTSectionImporter)
 add_subdirectory(Basic)
 add_subdirectory(ClangImporter)
 add_subdirectory(Demangling)
@@ -26,3 +28,4 @@ add_subdirectory(SILGen)
 add_subdirectory(SILOptimizer)
 add_subdirectory(Syntax)
 add_subdirectory(TBDGen)
+]]

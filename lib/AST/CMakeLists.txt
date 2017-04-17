@@ -1,9 +1,10 @@
-
+#[[
 if (SWIFT_FORCE_OPTIMIZED_TYPECHECKER)
   set(EXTRA_AST_FLAGS "FORCE_BUILD_OPTIMIZED")
 endif()
+]]
 
-add_swift_library(swiftAST STATIC
+add_cxx_library(swiftAST STATIC
   ASTContext.cpp
   ASTDumper.cpp
   ASTMangler.cpp
@@ -90,6 +91,8 @@ add_swift_library(swiftAST STATIC
   ${EXTRA_AST_FLAGS}
   )
 
+
+#[[
 # intrinsics_gen is the LLVM tablegen target that generates the include files
 # where intrinsics and attributes are declared. swiftAST depends on these
 # headers. When we build swift out of tree, this is not an issue since LLVM must
@@ -110,4 +113,4 @@ endif()
 
 set_property(SOURCE Verifier.cpp APPEND_STRING PROPERTY COMPILE_FLAGS
   "${swift_ast_verifier_flag}")
-
+]]
